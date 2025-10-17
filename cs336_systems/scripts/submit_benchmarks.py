@@ -54,20 +54,23 @@ def main():
         
     rows = []
     for job in jobs:
-        job.wait()
-        text = Path(job.paths.stdout).read_text()
-        m = re.search(r"Model parameter number: (\d+)", text)
-        param_cnt = int(m.group(1)) if m else None
-        m = re.search(r"(fwd(?:\+bwd)?) - mean: ([\d.]+)s, std: ([\d.]+)s", text)
-        if m:
-            rows.append({
-                "spec": job.spec_name,
-                "forward_only": (m.group(1) == "fwd"),
-                "mean_s": float(m.group(2)),
-                "std_s": float(m.group(3)),
-                "params": param_cnt,
-            })
-    
+        try:
+            job.wait()
+            text = Path(job.paths.stdout).read_text()
+            m = re.search(r"Model parameter number: (\d+)", text)
+            param_cnt = int(m.group(1)) if m else None
+            m = re.search(r"(fwd(?:\+bwd)?) - mean: ([\d.]+)s, std: ([\d.]+)s", text)
+            if m:
+                rows.append({
+                    "spec": job.spec_name,
+                    "forward_only": (m.group(1) == "fwd"),
+                    "mean_s": float(m.group(2)),
+                    "std_s": float(m.group(3)),
+                    "params": param_cnt,
+                })
+        except Exception as e:
+            print(f"[WARN] {job.spec_name} (job {job.job_id}) failed: {e}")
+        
     df = pd.DataFrame(rows)
     print(df.to_markdown(index=False))
 
