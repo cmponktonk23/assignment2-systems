@@ -29,6 +29,7 @@ def main():
     executor.update_parameters(
         timeout_min=30,
         cpus_per_task=8,
+        gpus_per_node=1,
     )
 
     jobs = []
