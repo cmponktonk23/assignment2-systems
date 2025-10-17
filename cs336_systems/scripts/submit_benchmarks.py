@@ -52,6 +52,9 @@ def main():
                 job.spec_name = f"{name}-{'fwd' if forward_only else 'fwd_bwd'}"
                 jobs.append(job)
         
+    for job in jobs:
+        print(job.job_id, job.spec_name)
+
     rows = []
     for job in jobs:
         try:
