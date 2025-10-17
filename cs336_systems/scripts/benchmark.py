@@ -2,6 +2,7 @@ import torch
 import timeit
 import argparse
 import numpy as np
+import contextlib
 from cs336_basics.transformer.transformer_lm import TransformerLM
 from cs336_basics.train.cross_entropy_loss import cross_entropy_loss
 
@@ -34,6 +35,8 @@ def benchmark(
     times = []
     total_steps = warmup_steps + measure_steps
 
+    ctx = torch.inference_mode if forward_only else contextlib.nullcontext
+    
     for step in range(total_steps):
         x = torch.randint(low = 0, high = vocab_size, size = (batch_size, context_length), device = device, dtype = torch.long)
         y = torch.randint(low = 0, high = vocab_size, size = (batch_size, context_length), device = device, dtype = torch.long)
@@ -43,14 +46,15 @@ def benchmark(
             torch.cuda.synchronize()
 
         start_time = timeit.default_timer()
-        
-        logits = model(x)
-        loss = cross_entropy_loss(logits.reshape(-1, logits.size(-1)), y.reshape(-1))
+    
+        with ctx():
+            logits = model(x)
+            loss = cross_entropy_loss(logits.reshape(-1, logits.size(-1)), y.reshape(-1))
 
-        # Calculate loss and gradient
-        if not forward_only:
-            loss.backward()
-            model.zero_grad(set_to_none=True)
+            # Calculate loss and gradient
+            if not forward_only:
+                loss.backward()
+                model.zero_grad(set_to_none=True)
 
         if device.type == "cuda":
             torch.cuda.synchronize()
