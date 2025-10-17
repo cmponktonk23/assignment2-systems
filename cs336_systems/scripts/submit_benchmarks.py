@@ -1,4 +1,6 @@
 import submitit
+import re
+import pandas as pd
 from pathlib import Path
 
 
@@ -50,8 +52,24 @@ def main():
                 job.spec_name = f"{name}-{'fwd' if forward_only else 'fwd_bwd'}"
                 jobs.append(job)
         
+    rows = []
     for job in jobs:
-        print(job.job_id, job.spec_name)
+        job.wait()
+        text = Path(job.paths.stdout).read_text()
+        m = re.search(r"Model parameter number: (\d+)", text)
+        param_cnt = int(m.group(1)) if m else None
+        m = re.search(r"(fwd(?:\+bwd)?) - mean: ([\d.]+)s, std: ([\d.]+)s", text)
+        if m:
+            rows.append({
+                "spec": job.spec_name,
+                "forward_only": (m.group(1) == "fwd"),
+                "mean_s": float(m.group(2)),
+                "std_s": float(m.group(3)),
+                "params": param_cnt,
+            })
+    
+    df = pd.DataFrame(rows)
+    print(df.to_markdown(index=False))
 
 
 if __name__ == "__main__":
