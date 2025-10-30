@@ -107,11 +107,11 @@ def flash_fwd_kernel(
         V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))
 
     # Compute Oi = diag(li)^-1 x Oi
-    Oi = (Oij / tl.broadcast_to(lij[:, None], Oij.shape))
+    Oi = (Oij / tl.broadcast_to(lij[:, None], Oij.shape)).to(dtype=O_block_ptr.type.element_ty)
     tl.store(O_block_ptr, Oi, boundary_check=(0, 1))
 
     # Compute Li = mij + log(lij)
-    Li = (mij + tl.log(lij))
+    Li = (mij + tl.log(lij)).to(dtype=L_block_ptr.type.element_ty)
     tl.store(L_block_ptr, Li, boundary_check=(0,))
 
 
