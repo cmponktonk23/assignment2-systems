@@ -7,7 +7,7 @@ B_q = 16
 B_k = 16
 
 
-def attention_forward(Q, K, V):
+def flash_fwd_kernel(Q, K, V):
         N_q, N_k = Q.shape[0], K.shape[0]
         T_q, T_k = N_q // B_q, N_k // B_k
         d = Q.shape[-1]
@@ -71,7 +71,7 @@ class FlashAttention(torch.autograd.Function):
         L = []
 
         for batch in range(batch_size):
-            O_batch, L_batch = attention_forward(Q[batch], K[batch], V[batch])
+            O_batch, L_batch = flash_fwd_kernel(Q[batch], K[batch], V[batch])
             O.append(O_batch)
             L.append(L_batch)
         
