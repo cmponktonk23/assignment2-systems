@@ -85,7 +85,7 @@ def flash_fwd_kernel(
         Vj = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
 
         # Compute tile of pre-softmax attention scores
-        Sij = tl.dot(Qi, tl.trans(Kj), out_dtype=tl.float32) * scale
+        Sij = tl.dot(Qi, tl.trans(Kj)) * scale
 
         # Compute mij = max(mi, rowmax(Sij))
         mij_old = mij
@@ -101,9 +101,7 @@ def flash_fwd_kernel(
         # Compute Oij = diag(exp(mij_old - mij)) x Oij + Pij x Vj
         Oij = tl.dot(
             Pij.to(Vj.dtype), Vj, 
-            acc=tl.broadcast_to(rescale[:, None], Oij.shape) * Oij,
-            out_dtype=tl.float32,
-        )
+            acc=tl.broadcast_to(rescale[:, None], Oij.shape) * Oij)
 
         K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))
         V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))
