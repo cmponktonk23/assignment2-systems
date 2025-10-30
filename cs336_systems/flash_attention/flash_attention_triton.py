@@ -72,7 +72,7 @@ def flash_fwd_kernel(
         order=(0,),
     )
 
-    Qi = tl.load(Q_block_ptr, boundary_check=(0, 1), padding_option="zero", dtype=tl.float32)
+    Qi = tl.load(Q_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
 
     # Initialize Oi, li, mi
     Oij = tl.zeros((Q_TILE_SIZE, D), dtype=tl.float32)
@@ -81,15 +81,15 @@ def flash_fwd_kernel(
 
     for j in range(tl.cdiv(N_KEYS, K_TILE_SIZE)):
         # Load Kj Vj from global memory
-        Kj = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero", dtype=tl.float32)
-        Vj = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero", dtype=tl.float32)
+        Kj = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
+        Vj = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
 
         # Compute tile of pre-softmax attention scores
-        Sij = tl.dot(Qi, tl.trans(Kj)) * scale
+        Sij = tl.dot(Qi, tl.trans(Kj), out_dtype=tl.float32) * scale
 
         # Compute mij = max(mi, rowmax(Sij))
         mij_old = mij
-        mij = tl.max(mij, tl.max(Sij, axis=1))
+        mij = tl.maximum(mij, tl.max(Sij, axis=1))
 
         # Compute P = exp(Sij - mij)
         Pij = tl.exp(Sij - tl.broadcast_to(mij[:, None], Sij.shape))
@@ -100,20 +100,21 @@ def flash_fwd_kernel(
 
         # Compute Oij = diag(exp(mij_old - mij)) x Oij + Pij x Vj
         Oij = tl.dot(
-            Pij, Vj, 
+            Pij.to(Vj.dtype), Vj, 
             acc=tl.broadcast_to(rescale[:, None], Oij.shape) * Oij,
+            out_dtype=tl.float32,
         )
 
         K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))
         V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))
 
     # Compute Oi = diag(li)^-1 x Oi
-    Oi = Oij / tl.broadcast_to(lij[:, None], Oij.shape)
-    tl.store(O_block_ptr, Oi, boundary_check=(0, 1), dtype=O_block_ptr.type.element_ty)
+    Oi = (Oij / tl.broadcast_to(lij[:, None], Oij.shape)).to(dtype=O_block_ptr.type.element_ty)
+    tl.store(O_block_ptr, Oi, boundary_check=(0, 1))
 
     # Compute Li = mij + log(lij)
-    Li = mij + tl.log(lij)
-    tl.store(L_block_ptr, Li, boundary_check=(0, 1), dtype=L_block_ptr.type.element_ty)
+    Li = (mij + tl.log(lij)).to(dtype=L_block_ptr.type.element_ty)
+    tl.store(L_block_ptr, Li, boundary_check=(0,))
 
 
 class FlashAttention(torch.autograd.Function):
@@ -123,10 +124,10 @@ class FlashAttention(torch.autograd.Function):
         N_q, N_k = Q.shape[1], K.shape[1]
         d = Q.shape[2]
 
-        O = torch.empty((N_q, d), dtype=Q.dtype)
-        L = torch.empty((N_q), dtype=Q.dtype)
+        O = torch.empty((batch_size, N_q, d), device=Q.device, dtype=Q.dtype)
+        L = torch.empty((batch_size, N_q,), device=Q.device, dtype=Q.dtype)
 
-        flash_fwd_kernel[(tl.cdiv(Q.shape[1], B_q), batch_size)](
+        flash_fwd_kernel[(triton.cdiv(N_q, B_q), batch_size)](
                           Q, K, V,
                           O, L,
                           Q.stride(0), Q.stride(1), Q.stride(2),
@@ -135,7 +136,8 @@ class FlashAttention(torch.autograd.Function):
                           O.stride(0), O.stride(1), O.stride(2),
                           L.stride(0), L.stride(1),
                           N_q, N_k,
-                          math.sqrt(d),
+                          1.0 / math.sqrt(d),
+                          d,
                           B_q,
                           B_k,
                           )
