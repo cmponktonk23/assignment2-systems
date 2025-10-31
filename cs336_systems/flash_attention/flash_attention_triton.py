@@ -246,7 +246,7 @@ def flash_bwd_kernel(
         Pij = tl.exp(Sij - tl.broadcast_to(Li[:, None], Sij.shape))
 
         # (Bk, Bq) fp16 * (Bq, D) fp16 = (Bk, D) fp32
-        dVi = tl.dot(tl.trans(Pij).to(dOi.dtype), dOi)
+        dVi = tl.dot(tl.trans(Pij).to(dOi.dtype), dOi, out_dtype=tl.float32)
         k_offsets = j * K_TILE_SIZE + k_range
         dV_ptrs = dV_ptr + batch_index * stride_dvb + k_offsets[:, None] * stride_dvq + d_offsets[None, :] * stride_dvd
         tl.atomic_add(dV_ptrs, dVi)
@@ -262,7 +262,7 @@ def flash_bwd_kernel(
         # (Bq, Bk) fp16 * (Bk, D) fp16 * scale fp32 = (Bq, D) fp32
         dQi += tl.dot(dSij.to(Kj.dtype), Kj) * scale
         # (Bk, Bq) fp16 * (Bq, D) fp16 * scale fp32 = (Bk, D) fp32
-        dKi = tl.dot(tl.trans(dSij).to(Qi.dtype), Qi) * scale
+        dKi = tl.dot(tl.trans(dSij).to(Qi.dtype), Qi, out_dtype=tl.float32) * scale
         dK_ptrs = dK_ptr + batch_index * stride_dkb + k_offsets[:, None] * stride_dkq + d_offsets[None, :] * stride_dkd
         tl.atomic_add(dK_ptrs, dKi)
 
@@ -311,8 +311,8 @@ class FlashAttention(torch.autograd.Function):
         d = Q.shape[2]
 
         dQ = torch.empty((batch_size, N_q, d), device=Q.device, dtype=Q.dtype)
-        dK = torch.zeros((batch_size, N_k, d), device=K.device, dtype=K.dtype)
-        dV = torch.zeros((batch_size, N_k, d), device=V.device, dtype=V.dtype)
+        dK = torch.zeros((batch_size, N_k, d), device=K.device, dtype=torch.float32)
+        dV = torch.zeros((batch_size, N_k, d), device=V.device, dtype=torch.float32)
 
         flash_bwd_kernel[(triton.cdiv(N_q, B_q), batch_size)](
             Q, K, V, O, dO, L,
@@ -334,4 +334,4 @@ class FlashAttention(torch.autograd.Function):
             ctx.is_causal,
         )
 
-        return dQ, dK, dV, None
+        return dQ, dK.to(K.dtype), dV.to(V.dtype), None
