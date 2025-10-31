@@ -227,10 +227,10 @@ def flash_bwd_kernel(
     #     order=(1, 0),
     # )
 
-    Qi = tl.load(Q_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
-    Oi = tl.load(O_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
-    dOi = tl.load(dO_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
-    Li = tl.load(L_block_ptr, boundary_check=(0,), padding_option="zero").to(tl.float16)
+    Qi = tl.load(Q_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
+    Oi = tl.load(O_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
+    dOi = tl.load(dO_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
+    Li = tl.load(L_block_ptr, boundary_check=(0,), padding_option="zero").to(tl.float32)
     
     dQi = tl.zeros((Q_TILE_SIZE, D), dtype=tl.float32)
 
@@ -238,8 +238,8 @@ def flash_bwd_kernel(
     d_offs = tl.arange(0, D)
 
     for j in range(tl.cdiv(N_KEYS, K_TILE_SIZE)):
-        Kj = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
-        Vj = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
+        Kj = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
+        Vj = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
 
         # (Bq, D) float32 * (D, Bk) float32 * scale float32 = (Bq, Bk) float32
         Sij = tl.dot(Qi.to(tl.float32), tl.trans(Kj).to(tl.float32)) * scale
@@ -247,17 +247,17 @@ def flash_bwd_kernel(
         # (Bq, Bk) float32
         Pij = tl.exp(Sij - tl.broadcast_to(Li[:, None], Sij.shape))
 
-        # (Bk, Bq) float16 * (Bq, D) float16 = (Bk, D) float16
-        dVi = tl.dot(tl.trans(Pij).to(tl.float16), dOi)
+        # (Bk, Bq) float32 * (Bq, D) float32 = (Bk, D) float32
+        dVi = tl.dot(tl.trans(Pij), dOi)
         k_idx = j * K_TILE_SIZE + k_offs
         dv_ptrs = dV_ptr + batch_index * stride_dvb + \
                 k_idx[:, None] * stride_dvq + d_offs[None, :] * stride_dvd
         tl.atomic_add(dv_ptrs, dVi)
 
-        # (Bq, D) float16 * (D, Bk) float16 = (Bq, Bk) float16
+        # (Bq, D) float32 * (D, Bk) float32 = (Bq, Bk) float32
         dPij = tl.dot(dOi, tl.trans(Vj))
 
-        # (Bq,) float16
+        # (Bq,) float32
         Di = tl.sum(Oi * dOi, axis=1)
         # (Bq, Bk) float32
         dSij = Pij * (dPij - tl.broadcast_to(Di[:, None], dPij.shape))
@@ -317,8 +317,8 @@ class FlashAttention(torch.autograd.Function):
         d = Q.shape[2]
 
         dQ = torch.empty((batch_size, N_q, d), device=Q.device, dtype=Q.dtype)
-        dK = torch.zeros((batch_size, N_k, d), device=K.device, dtype=K.dtype)
-        dV = torch.zeros((batch_size, N_k, d), device=V.device, dtype=V.dtype)
+        dK = torch.zeros((batch_size, N_k, d), device=K.device, dtype=torch.float32)
+        dV = torch.zeros((batch_size, N_k, d), device=V.device, dtype=torch.float32)
 
         flash_bwd_kernel[(triton.cdiv(N_q, B_q), batch_size)](
             Q, K, V, O, dO, L,
@@ -340,4 +340,4 @@ class FlashAttention(torch.autograd.Function):
             ctx.is_causal,
         )
 
-        return dQ, dK, dV, None
+        return dQ, dK.to(K.dtype), dV.to(V.dtype), None
