@@ -240,64 +240,64 @@ def flash_bwd_kernel(
     # if is_causal:
     #     q_idx = query_tile_index * Q_TILE_SIZE + tl.arange(0, Q_TILE_SIZE)
 
-    for j in range(tl.cdiv(N_KEYS, K_TILE_SIZE)):
-        Kj = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
-        Vj = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
+    # for j in range(tl.cdiv(N_KEYS, K_TILE_SIZE)):
+    #     Kj = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
+    #     Vj = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
 
-        # (Bq, D) float32 * (D, Bk) float32 * scale float32 = (Bq, Bk) float32
-        Sij = tl.dot(Qi.to(tl.float32), tl.trans(Kj).to(tl.float32)) * scale
-        # if is_causal:
-        #     k_idx_full = j * K_TILE_SIZE + k_offs
-        #     causal = (q_idx[:, None] >= k_idx_full[None, :]) & \
-        #             (q_idx[:, None] < N_QUERIES) & \
-        #             (k_idx_full[None, :] < N_KEYS)
-        #     Sij = tl.where(causal, Sij, float('-inf'))
+    #     # (Bq, D) float32 * (D, Bk) float32 * scale float32 = (Bq, Bk) float32
+    #     Sij = tl.dot(Qi.to(tl.float32), tl.trans(Kj).to(tl.float32)) * scale
+    #     # if is_causal:
+    #     #     k_idx_full = j * K_TILE_SIZE + k_offs
+    #     #     causal = (q_idx[:, None] >= k_idx_full[None, :]) & \
+    #     #             (q_idx[:, None] < N_QUERIES) & \
+    #     #             (k_idx_full[None, :] < N_KEYS)
+    #     #     Sij = tl.where(causal, Sij, float('-inf'))
 
-        # (Bq, Bk) float32
-        Pij = tl.exp(Sij - tl.broadcast_to(Li[:, None], Sij.shape))
+    #     # (Bq, Bk) float32
+    #     Pij = tl.exp(Sij - tl.broadcast_to(Li[:, None], Sij.shape))
 
-        # (Bk, Bq) float32 * (Bq, D) float32 = (Bk, D) float32
-        # dVi = tl.dot(tl.trans(Pij), dOi)
-        # tl.store(dV_block_ptr, dVi, boundary_check=(0, 1))
+    #     # (Bk, Bq) float32 * (Bq, D) float32 = (Bk, D) float32
+    #     # dVi = tl.dot(tl.trans(Pij), dOi)
+    #     # tl.store(dV_block_ptr, dVi, boundary_check=(0, 1))
 
-        # (Bq, D) float32 * (D, Bk) float32 = (Bq, Bk) float32
-        dPij = tl.dot(dOi, tl.trans(Vj))
+    #     # (Bq, D) float32 * (D, Bk) float32 = (Bq, Bk) float32
+    #     dPij = tl.dot(dOi, tl.trans(Vj))
 
-        # (Bq,) float32
-        Di = tl.sum(Oi * dOi, axis=1)
-        # (Bq, Bk) float32
-        dSij = Pij * (dPij - tl.broadcast_to(Di[:, None], dPij.shape))
+    #     # (Bq,) float32
+    #     Di = tl.sum(Oi * dOi, axis=1)
+    #     # (Bq, Bk) float32
+    #     dSij = Pij * (dPij - tl.broadcast_to(Di[:, None], dPij.shape))
 
-        # (Bq, Bk) float32 * (Bk, D) float32 * scale float32 = (Bq, D) float32
-        dQi = tl.dot(dSij, Kj.to(tl.float32), acc=dQi) * scale
-        # (Bk, Bq) float32 * (Bq, D) float32 * scale float32 = (Bk, D) float32
-        # dKi = tl.dot(tl.trans(dSij), Qi.to(tl.float32)) * scale
-        # tl.store(dK_block_ptr, dKi, boundary_check=(0, 1))
+    #     # (Bq, Bk) float32 * (Bk, D) float32 * scale float32 = (Bq, D) float32
+    #     dQi = tl.dot(dSij, Kj.to(tl.float32), acc=dQi) * scale
+    #     # (Bk, Bq) float32 * (Bq, D) float32 * scale float32 = (Bk, D) float32
+    #     # dKi = tl.dot(tl.trans(dSij), Qi.to(tl.float32)) * scale
+    #     # tl.store(dK_block_ptr, dKi, boundary_check=(0, 1))
 
-        K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))
-        V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))
-        # dK_block_ptr = dK_block_ptr.advance((K_TILE_SIZE, 0))
-        # dV_block_ptr = dV_block_ptr.advance((K_TILE_SIZE, 0))
+    #     K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))
+    #     V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))
+    #     # dK_block_ptr = dK_block_ptr.advance((K_TILE_SIZE, 0))
+    #     # dV_block_ptr = dV_block_ptr.advance((K_TILE_SIZE, 0))
 
-        # cols = tl.arange(0, D)
-        # k_idx = j * K_TILE_SIZE + k_offs
+    #     # cols = tl.arange(0, D)
+    #     # k_idx = j * K_TILE_SIZE + k_offs
 
-        # dv_ptrs = (
-        #     dV_ptr
-        #     + batch_index * stride_dvb
-        #     + k_idx[:, None] * stride_dvq
-        #     + cols[None, :] * stride_dvd
-        # )
-        # dk_ptrs = (
-        #     dK_ptr
-        #     + batch_index * stride_dkb
-        #     + k_idx[:, None] * stride_dkq
-        #     + cols[None, :] * stride_dkd
-        # )
-        # mask = (k_idx[:, None] < N_KEYS) & (cols[None, :] < D)
+    #     # dv_ptrs = (
+    #     #     dV_ptr
+    #     #     + batch_index * stride_dvb
+    #     #     + k_idx[:, None] * stride_dvq
+    #     #     + cols[None, :] * stride_dvd
+    #     # )
+    #     # dk_ptrs = (
+    #     #     dK_ptr
+    #     #     + batch_index * stride_dkb
+    #     #     + k_idx[:, None] * stride_dkq
+    #     #     + cols[None, :] * stride_dkd
+    #     # )
+    #     # mask = (k_idx[:, None] < N_KEYS) & (cols[None, :] < D)
 
-        # tl.atomic_add(dv_ptrs, dVi, mask=mask)
-        # tl.atomic_add(dk_ptrs, dKi, mask=mask)
+    #     # tl.atomic_add(dv_ptrs, dVi, mask=mask)
+    #     # tl.atomic_add(dk_ptrs, dKi, mask=mask)
 
 
     tl.store(dQ_block_ptr, dQi.to(dQ_block_ptr.type.element_ty), boundary_check=(0, 1))
