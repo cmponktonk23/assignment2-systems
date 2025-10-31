@@ -280,25 +280,25 @@ def flash_bwd_kernel(
         # dV_block_ptr = dV_block_ptr.advance((K_TILE_SIZE, 0))
 
         cols = tl.arange(0, D)
-        k_idx = j * K_TILE_SIZE + tl.arange(0, K_TILE_SIZE)
+        k_idx = j * K_TILE_SIZE + k_offs
 
-        for kk in tl.static_range(K_TILE_SIZE):
-            valid = (k_idx[kk] < N_KEYS)
-            dv_row_ptr = (
-                dV_ptr
-                + batch_index * stride_dvb
-                + k_idx[kk] * stride_dvq
-                + cols * stride_dvd
-            )
-            dk_row_ptr = (
-                dK_ptr
-                + batch_index * stride_dkb
-                + k_idx[kk] * stride_dkq
-                + cols * stride_dkd
-            )
-            row_mask = valid & (cols < D)
-            tl.atomic_add(dv_row_ptr, dVi[kk, :], mask=row_mask)
-            tl.atomic_add(dk_row_ptr, dKi[kk, :], mask=row_mask)
+        dv_ptrs = (
+            dV_ptr
+            + batch_index * stride_dvb
+            + k_idx[:, None] * stride_dvq
+            + cols[None, :] * stride_dvd
+        )
+        dk_ptrs = (
+            dK_ptr
+            + batch_index * stride_dkb
+            + k_idx[:, None] * stride_dkq
+            + cols[None, :] * stride_dkd
+        )
+        mask = (k_idx[:, None] < N_KEYS) & (cols[None, :] < D)
+
+        tl.atomic_add(dv_ptrs, dVi, mask=mask)
+        tl.atomic_add(dk_ptrs, dKi, mask=mask)
+
 
     tl.store(dQ_block_ptr, dQi.to(dQ_block_ptr.type.element_ty), boundary_check=(0, 1))
 
