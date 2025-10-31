@@ -245,8 +245,9 @@ def flash_bwd_kernel(
         Pij = tl.exp(Sij - tl.broadcast_to(Li[:, None], Sij.shape))
 
         # (Bk, Bq) float16 * (Bq, D) float16 = (Bk, D) float16
-        dVi = tl.dot(tl.trans(Pij).to(tl.float16), dOi)
-        tl.atomic_add(dV_block_ptr, dVi.to(dV_block_ptr.type.element_ty))
+        dV_dtype = dV_block_ptr.type.element_ty
+        dVi = tl.dot(tl.trans(Pij).to(tl.float16), dOi).to(dV_dtype)
+        tl.atomic_add(dV_block_ptr, dVi)
 
         # (Bq, D) float16 * (D, Bk) float16 = (Bq, Bk) float16
         dPij = tl.dot(dOi, tl.trans(Vj))
