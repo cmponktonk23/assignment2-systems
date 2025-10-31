@@ -249,11 +249,12 @@ def flash_bwd_kernel(
 
         # (Bk, Bq) float16 * (Bq, D) float16 = (Bk, D) float16
         dVi = tl.dot(tl.trans(Pij).to(tl.float32), dOi.to(tl.float32))
-        dV_offsets = (batch_index * stride_dvb + 
-                    (j * K_TILE_SIZE + k_offs[:, None]) * stride_dvq + 
+        dV_offsets = ((j * K_TILE_SIZE + k_offs[:, None]) * stride_dvq + 
                     d_offs[None, :] * stride_dvd)
         dV_mask = ((j * K_TILE_SIZE + k_offs[:, None]) < N_KEYS) & (d_offs[None, :] < D)
-        tl.atomic_add(dV_ptr + dV_offsets, dVi.to(tl.float16), mask=dV_mask)
+        # 使用 dV_ptr（已经指向当前 batch）+ 相对偏移
+        tl.atomic_add(dV_ptr + batch_index * stride_dvb + dV_offsets, 
+                    dVi.to(tl.float16), mask=dV_mask)
 
         # (Bq, D) float16 * (D, Bk) float16 = (Bq, Bk) float16
         dPij = tl.dot(dOi, tl.trans(Vj))
@@ -267,11 +268,11 @@ def flash_bwd_kernel(
         dQi = tl.dot(dSij, Kj.to(tl.float32), acc=dQi) * scale
         # (Bk, Bq) float32 * (Bq, D) float32 * scale float32 = (Bk, D) float32
         dKi = tl.dot(tl.trans(dSij), Qi.to(tl.float32)) * scale
-        dK_offsets = (batch_index * stride_dkb + 
-                    (j * K_TILE_SIZE + k_offs[:, None]) * stride_dkq + 
+        dK_offsets = ((j * K_TILE_SIZE + k_offs[:, None]) * stride_dkq + 
                     d_offs[None, :] * stride_dkd)
         dK_mask = ((j * K_TILE_SIZE + k_offs[:, None]) < N_KEYS) & (d_offs[None, :] < D)
-        tl.atomic_add(dK_ptr + dK_offsets, dKi.to(tl.float16), mask=dK_mask)
+        tl.atomic_add(dK_ptr + batch_index * stride_dkb + dK_offsets, 
+                    dKi.to(tl.float16), mask=dK_mask)
 
         K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))
         V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))
