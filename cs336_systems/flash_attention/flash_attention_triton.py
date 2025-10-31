@@ -252,7 +252,8 @@ def flash_bwd_kernel(
         k_idx = j * K_TILE_SIZE + k_offs
         dv_ptrs = dV_ptr + batch_index * stride_dvb + \
                 k_idx[:, None] * stride_dvq + d_offs[None, :] * stride_dvd
-        tl.atomic_add(dv_ptrs, dVi)
+        mask2d = (k_idx[:, None] < N_KEYS) & (d_offs[None, :] < D)
+        tl.atomic_add(dv_ptrs, dVi, mask2d)
 
         # (Bq, D) float32 * (D, Bk) float32 = (Bq, Bk) float32
         dPij = tl.dot(dOi, tl.trans(Vj))
@@ -268,7 +269,7 @@ def flash_bwd_kernel(
         dKi = tl.dot(tl.trans(dSij), Qi.to(tl.float32)) * scale
         dk_ptrs = dK_ptr + batch_index * stride_dkb + \
                 k_idx[:, None] * stride_dkq + d_offs[None, :] * stride_dkd
-        tl.atomic_add(dk_ptrs, dKi)
+        tl.atomic_add(dk_ptrs, dKi, mask2d)
 
         K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))
         V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))
