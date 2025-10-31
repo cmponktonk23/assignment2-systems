@@ -296,8 +296,8 @@ def flash_bwd_kernel(
         )
         mask = (k_idx[:, None] < N_KEYS) & (cols[None, :] < D)
 
-        tl.atomic_add(dv_ptrs, dVi, mask=mask)
-        tl.atomic_add(dk_ptrs, dKi, mask=mask)
+        # tl.atomic_add(dv_ptrs, dVi, mask=mask)
+        # tl.atomic_add(dk_ptrs, dKi, mask=mask)
 
 
     tl.store(dQ_block_ptr, dQi.to(dQ_block_ptr.type.element_ty), boundary_check=(0, 1))
