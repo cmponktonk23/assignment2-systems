@@ -74,7 +74,7 @@ def flash_fwd_kernel(
     )
 
     # (Bq, D) fp16
-    Qi = tl.load(Q_block_ptr, boundary_check=(0, 1), padding_option="zero")
+    Qi = tl.load(Q_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
 
     # (Bq, D) fp32
     Oij = tl.zeros((Q_TILE_SIZE, D), dtype=tl.float32)
@@ -89,9 +89,9 @@ def flash_fwd_kernel(
 
     for j in range(tl.cdiv(N_KEYS, K_TILE_SIZE)):
         # (Bk, D) fp16
-        Kj = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero")
+        Kj = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
         # (Bk, D) fp16
-        Vj = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero")
+        Vj = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
 
         # (Bq, D) fp16 * (D, Bk) fp16 * scale fp32 = (Bq, Bk) fp32
         Sij = tl.dot(Qi, tl.trans(Kj)) * scale
@@ -213,13 +213,13 @@ def flash_bwd_kernel(
     )
 
     # (Bq, D) fp16
-    Qi = tl.load(Q_block_ptr, boundary_check=(0, 1), padding_option="zero")
+    Qi = tl.load(Q_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
     # (Bq, D) fp16
-    Oi = tl.load(O_block_ptr, boundary_check=(0, 1), padding_option="zero")
+    Oi = tl.load(O_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
     # (Bq, D) fp16
-    dOi = tl.load(dO_block_ptr, boundary_check=(0, 1), padding_option="zero")
+    dOi = tl.load(dO_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
     # (Bq,) fp16 
-    Li = tl.load(L_block_ptr, boundary_check=(0,), padding_option="zero")
+    Li = tl.load(L_block_ptr, boundary_check=(0,), padding_option="zero").to(tl.float16)
     # (Bq, D) fp32
     dQi = tl.zeros((Q_TILE_SIZE, D), dtype=tl.float32)
 
@@ -231,9 +231,9 @@ def flash_bwd_kernel(
 
     for j in range(tl.cdiv(N_KEYS, K_TILE_SIZE)):
         # (Bk, D) fp16
-        Kj = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero")
+        Kj = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
         # (Bk, D) fp16
-        Vj = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero")
+        Vj = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
 
         # (Bq, D) fp16 * (D, Bk) fp16 * scale fp32 = (Bq, Bk) fp32
         Sij = tl.dot(Qi, tl.trans(Kj)) * scale
