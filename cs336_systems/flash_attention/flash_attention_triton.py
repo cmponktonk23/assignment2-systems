@@ -89,11 +89,11 @@ def flash_fwd_kernel(
         Vj = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
 
         # Compute tile of pre-softmax attention scores
-        Sij = tl.dot(Qi, tl.trans(Kj)) * scale
+        Sij = tl.dot(Qi, tl.trans(Kj), out_dtype=tl.float32) * scale
         if is_causal:
             k_idx = j * K_TILE_SIZE + tl.arange(0, K_TILE_SIZE)
-            mask = q_idx[:, None] >= k_idx[None, :]
-            Sij = tl.where(mask, Sij, Sij - 1e6)
+            mask = (q_idx[:, None] >= k_idx[None, :]) & (q_idx[:, None] < N_QUERIES) & (k_idx[None, :] < N_KEYS)
+            Sij = tl.where(mask, Sij, float('-inf'))
 
         # Compute mij = max(mi, rowmax(Sij))
         mij_old = mij
