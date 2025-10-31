@@ -141,6 +141,7 @@ def flash_bwd_kernel(
     D: tl.constexpr,
     Q_TILE_SIZE: tl.constexpr,
     K_TILE_SIZE: tl.constexpr,
+    is_causal: tl.constexpr,
 ):
     query_tile_index = tl.program_id(0)
     batch_index = tl.program_id(1)
@@ -331,4 +332,4 @@ class FlashAttention(torch.autograd.Function):
             ctx.is_causal,
         )
 
-        return dQ, dK, dV
+        return dQ, dK, dV, None
