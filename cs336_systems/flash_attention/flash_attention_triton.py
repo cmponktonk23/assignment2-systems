@@ -259,10 +259,18 @@ def flash_bwd_kernel(
         # (Bk, Bq) float32 * (Bq, D) float32 = (Bk, D) float32
         dVi = tl.dot(tl.trans(Pij), dOi)
         k_idx = j * K_TILE_SIZE + k_offs
-        dv_ptrs = dV_ptr + batch_index * stride_dvb + \
-                k_idx[:, None] * stride_dvq + d_offs[None, :] * stride_dvd
+        dv_ptrs = (
+            dV_ptr
+            + batch_index * stride_dvb
+            + k_idx[:, None] * stride_dvq
+            + d_offs[None, :] * stride_dvd
+        )
         mask2d = (k_idx[:, None] < N_KEYS) & (d_offs[None, :] < D)
-        tl.atomic_add(dv_ptrs, dVi, mask=mask2d)
+
+        dv_ptrs_flat = tl.reshape(dv_ptrs, (K_TILE_SIZE * D,))
+        dVi_flat = tl.reshape(dVi, (K_TILE_SIZE * D,))
+        mask_flat = tl.reshape(mask2d, (K_TILE_SIZE * D,))
+        tl.atomic_add(dv_ptrs_flat, dVi_flat, mask=mask_flat)
 
         # (Bq, D) float32 * (D, Bk) float32 = (Bq, Bk) float32
         dPij = tl.dot(dOi, tl.trans(Vj))
@@ -276,9 +284,15 @@ def flash_bwd_kernel(
         dQi = tl.dot(dSij, Kj.to(tl.float32), acc=dQi) * scale
         # (Bk, Bq) float32 * (Bq, D) float32 * scale float32 = (Bk, D) float32
         dKi = tl.dot(tl.trans(dSij), Qi.to(tl.float32)) * scale
-        dk_ptrs = dK_ptr + batch_index * stride_dkb + \
-                k_idx[:, None] * stride_dkq + d_offs[None, :] * stride_dkd
-        tl.atomic_add(dk_ptrs, dKi, mask=mask2d)
+        dk_ptrs = (
+                    dK_ptr
+                    + batch_index * stride_dkb
+                    + k_idx[:, None] * stride_dkq
+                    + d_offs[None, :] * stride_dkd
+                )
+        dk_ptrs_flat = tl.reshape(dk_ptrs, (K_TILE_SIZE * D,))
+        dKi_flat = tl.reshape(dKi, (K_TILE_SIZE * D,))
+        tl.atomic_add(dk_ptrs_flat, dKi_flat, mask=mask_flat)
 
         K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))
         V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))
