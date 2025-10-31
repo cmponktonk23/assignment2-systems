@@ -232,7 +232,7 @@ def flash_bwd_kernel(
     dOi = tl.load(dO_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
     Li = tl.load(L_block_ptr, boundary_check=(0,), padding_option="zero").to(tl.float16)
     
-    dQi = tl.zeros((Q_TILE_SIZE, D), dtype=tl.float16)
+    dQi = tl.zeros((Q_TILE_SIZE, D), dtype=tl.float32)
 
     for j in range(tl.cdiv(N_KEYS, K_TILE_SIZE)):
         Kj = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
@@ -241,7 +241,7 @@ def flash_bwd_kernel(
         # (Bq, D) float16 * (D, Bk) float16 = (Bq, Bk) float16
         Sij = tl.dot(Qi, tl.trans(Kj)) * scale
 
-        # (Bq, Bk) float32
+        # (Bq, Bk) float16
         Pij = tl.exp(Sij - tl.broadcast_to(Li[:, None], Sij.shape))
 
         # (Bk, Bq) float16 * (Bq, D) float16 = (Bk, D) float16
