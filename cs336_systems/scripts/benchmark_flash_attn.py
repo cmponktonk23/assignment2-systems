@@ -7,7 +7,7 @@ from cs336_systems.flash_attention.flash_attention_pytorch import FlashAttention
 from cs336_systems.flash_attention.flash_attention_triton import FlashAttention as FlashAttentionTriton
 
 
-SEQ_LENs = [128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]
+SEQ_LENs = [128, 256,] #512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]
 D_MODELS = [16, 32, 64, 128]
 DTYPES = [torch.bfloat16, torch.float32]
 
