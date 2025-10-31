@@ -89,6 +89,7 @@ def main():
     for seq_len, d_model, dtype in it.product(SEQ_LENs, D_MODELS, DTYPES):
         torch.cuda.empty_cache()
         results.extend(benchmark(seq_len, d_model, dtype))
+        print(f"seq_len={seq_len}, d_model={d_model}, dtype={dtype} done")
 
     results.sort(key=lambda r: (r['dtype'], r['seq_len'], r['d_model'], r['impl']))
     print(tabulate(
