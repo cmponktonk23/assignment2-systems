@@ -230,7 +230,7 @@ def flash_bwd_kernel(
     Qi = tl.load(Q_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
     Oi = tl.load(O_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
     dOi = tl.load(dO_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
-    Li = tl.load(L_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
+    Li = tl.load(L_block_ptr, boundary_check=(0,), padding_option="zero").to(tl.float16)
     
     dQi = tl.zeros((Q_TILE_SIZE, D), dtype=tl.float16)
 
