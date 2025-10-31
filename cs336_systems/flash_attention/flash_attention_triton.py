@@ -257,9 +257,9 @@ def flash_bwd_kernel(
         dSij = Pij * (dPij - tl.broadcast_to(Di[:, None], dPij.shape))
 
         # (Bq, Bk) float32 * (Bk, D) float32 * scale float32 = (Bq, D) float32
-        dQi = tl.dot(dSij, Kj.to(dSij.dtype), acc=dQi) * scale
+        dQi = tl.dot(dSij, Kj.to(tl.float32), acc=dQi) * scale
         # (Bk, Bq) float32 * (Bq, D) float32 * scale float32 = (Bk, D) float32
-        dKi = tl.dot(tl.trans(dSij), Qi.to(dSij.dtype)) * scale
+        dKi = tl.dot(tl.trans(dSij), Qi.to(tl.float32)) * scale
         tl.atomic_add(dK_block_ptr, dKi)
 
         K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))
