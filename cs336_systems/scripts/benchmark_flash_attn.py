@@ -22,7 +22,7 @@ def time_forward(fn, q, k, v):
         with torch.no_grad():
             fn.apply(q, k, v, True)
         torch.cuda.synchronize()
-    return tt.do_bench(wrapper)
+    return tt.do_bench(wrapper, warmup=5, rep=10)
 
 
 def time_backward(fn, q, k, v, do):
@@ -41,7 +41,7 @@ def time_backward(fn, q, k, v, do):
             v_.grad.zero_()
         out.backward(do_, retain_graph=True)
         torch.cuda.synchronize()
-    return tt.do_bench(wrapper)
+    return tt.do_bench(wrapper, warmup=5, rep=10)
 
 
 def time_end_to_end(fn, q, k, v, do):
@@ -52,7 +52,7 @@ def time_end_to_end(fn, q, k, v, do):
             out = fn.apply(q_, k_, v_, True)
             out.backward(do_)
         torch.cuda.synchronize()
-    return tt.do_bench(wrapper)
+    return tt.do_bench(wrapper, warmup=5, rep=10)
 
 
 def benchmark(seq_len, d_model, dtype):
