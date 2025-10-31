@@ -257,7 +257,7 @@ def flash_bwd_kernel(
         Pij = tl.exp(Sij - tl.broadcast_to(Li[:, None], Sij.shape))
 
         # (Bk, Bq) float16 * (Bq, D) float16 = (Bk, D) float16
-        # dVi = tl.dot(tl.trans(Pij), dOi)
+        dVi = tl.dot(tl.trans(Pij).to(tl.float16), dOi)
         # tl.store(dV_block_ptr, dVi, boundary_check=(0, 1))
 
         # (Bq, D) float16 * (D, Bk) float16 = (Bq, Bk) float16
@@ -269,36 +269,15 @@ def flash_bwd_kernel(
         dSij = Pij * (dPij - tl.broadcast_to(Di[:, None], dPij.shape))
 
         # (Bq, Bk) float16 * (Bk, D) float16 * scale float16 = (Bq, D) float16
-        dQi = tl.dot(dSij.to(tl.float16), Kj).to(tl.float16)
+        dQi = tl.dot(dSij.to(tl.float16), Kj, acc=dQi).to(tl.float16)
         # (Bk, Bq) float16 * (Bq, D) float16 * scale float16 = (Bk, D) float16
-        # dKi = tl.dot(tl.trans(dSij), Qi.to(tl.float16)) * scale
+        dKi = tl.dot(tl.trans(dSij), Qi.to(tl.float16)) * scale
         # tl.store(dK_block_ptr, dKi, boundary_check=(0, 1))
 
         K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))
         V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))
-        # dK_block_ptr = dK_block_ptr.advance((K_TILE_SIZE, 0))
-        # dV_block_ptr = dV_block_ptr.advance((K_TILE_SIZE, 0))
-
-        # cols = tl.arange(0, D)
-        # k_idx = j * K_TILE_SIZE + k_offs
-
-        # dv_ptrs = (
-        #     dV_ptr
-        #     + batch_index * stride_dvb
-        #     + k_idx[:, None] * stride_dvq
-        #     + cols[None, :] * stride_dvd
-        # )
-        # dk_ptrs = (
-        #     dK_ptr
-        #     + batch_index * stride_dkb
-        #     + k_idx[:, None] * stride_dkq
-        #     + cols[None, :] * stride_dkd
-        # )
-        # mask = (k_idx[:, None] < N_KEYS) & (cols[None, :] < D)
-
-        # tl.atomic_add(dv_ptrs, dVi, mask=mask)
-        # tl.atomic_add(dk_ptrs, dKi, mask=mask)
-
+        dK_block_ptr = dK_block_ptr.advance((K_TILE_SIZE, 0))
+        dV_block_ptr = dV_block_ptr.advance((K_TILE_SIZE, 0))
 
     tl.store(dQ_block_ptr, dQi.to(dQ_block_ptr.type.element_ty), boundary_check=(0, 1))
 
