@@ -227,12 +227,12 @@ def flash_bwd_kernel(
     #     order=(1, 0),
     # )
 
-    Qi = tl.load(Q_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
-    Oi = tl.load(O_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
-    dOi = tl.load(dO_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
-    Li = tl.load(L_block_ptr, boundary_check=(0,), padding_option="zero").to(tl.float32)
+    Qi = tl.load(Q_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
+    Oi = tl.load(O_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
+    dOi = tl.load(dO_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
+    Li = tl.load(L_block_ptr, boundary_check=(0,), padding_option="zero").to(tl.float16)
     
-    dQi = tl.zeros((Q_TILE_SIZE, D), dtype=tl.float32)
+    dQi = tl.zeros((Q_TILE_SIZE, D), dtype=tl.float16)
 
     # k_offs = tl.arange(0, K_TILE_SIZE)
     # d_offs = tl.arange(0, D)
@@ -241,11 +241,11 @@ def flash_bwd_kernel(
     #     q_idx = query_tile_index * Q_TILE_SIZE + tl.arange(0, Q_TILE_SIZE)
 
     for j in range(tl.cdiv(N_KEYS, K_TILE_SIZE)):
-        Kj = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
-        Vj = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
+        Kj = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
+        Vj = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
 
-        # (Bq, D) float32 * (D, Bk) float32 * scale float32 = (Bq, Bk) float32
-        Sij = tl.dot(Qi.to(tl.float32), tl.trans(Kj).to(tl.float32)) * scale
+        # (Bq, D) float16 * (D, Bk) float16 * scale float16 = (Bq, Bk) float16
+        Sij = tl.dot(Qi.to(tl.float16), tl.trans(Kj).to(tl.float16)) * scale
         # if is_causal:
         #     k_idx_full = j * K_TILE_SIZE + k_offs
         #     causal = (q_idx[:, None] >= k_idx_full[None, :]) & \
@@ -253,25 +253,25 @@ def flash_bwd_kernel(
         #             (k_idx_full[None, :] < N_KEYS)
         #     Sij = tl.where(causal, Sij, float('-inf'))
 
-        # (Bq, Bk) float32
+        # (Bq, Bk) float16
         Pij = tl.exp(Sij - tl.broadcast_to(Li[:, None], Sij.shape))
 
-        # (Bk, Bq) float32 * (Bq, D) float32 = (Bk, D) float32
+        # (Bk, Bq) float16 * (Bq, D) float16 = (Bk, D) float16
         # dVi = tl.dot(tl.trans(Pij), dOi)
         # tl.store(dV_block_ptr, dVi, boundary_check=(0, 1))
 
-        # (Bq, D) float32 * (D, Bk) float32 = (Bq, Bk) float32
+        # (Bq, D) float16 * (D, Bk) float16 = (Bq, Bk) float16
         dPij = tl.dot(dOi, tl.trans(Vj))
 
-        # (Bq,) float32
+        # (Bq,) float16
         Di = tl.sum(Oi * dOi, axis=1)
-        # (Bq, Bk) float32
+        # (Bq, Bk) float16
         dSij = Pij * (dPij - tl.broadcast_to(Di[:, None], dPij.shape))
 
-        # (Bq, Bk) float32 * (Bk, D) float32 * scale float32 = (Bq, D) float32
+        # (Bq, Bk) float16 * (Bk, D) float16 * scale float16 = (Bq, D) float16
         dQi = tl.dot(dSij, Kj)
-        # (Bk, Bq) float32 * (Bq, D) float32 * scale float32 = (Bk, D) float32
-        # dKi = tl.dot(tl.trans(dSij), Qi.to(tl.float32)) * scale
+        # (Bk, Bq) float16 * (Bq, D) float16 * scale float16 = (Bk, D) float16
+        # dKi = tl.dot(tl.trans(dSij), Qi.to(tl.float16)) * scale
         # tl.store(dK_block_ptr, dKi, boundary_check=(0, 1))
 
         K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))
@@ -342,8 +342,8 @@ class FlashAttention(torch.autograd.Function):
         d = Q.shape[2]
 
         dQ = torch.empty((batch_size, N_q, d), device=Q.device, dtype=Q.dtype)
-        dK = torch.zeros((batch_size, N_k, d), device=K.device, dtype=torch.float32)
-        dV = torch.zeros((batch_size, N_k, d), device=V.device, dtype=torch.float32)
+        dK = torch.zeros((batch_size, N_k, d), device=K.device, dtype=K.dtype)
+        dV = torch.zeros((batch_size, N_k, d), device=V.device, dtype=V.dtype)
 
         flash_bwd_kernel[(triton.cdiv(N_q, B_q), batch_size)](
             Q, K, V, O, dO, L,
