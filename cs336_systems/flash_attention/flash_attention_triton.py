@@ -244,21 +244,21 @@ def flash_bwd_kernel(
         Kj = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
         Vj = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
 
-        # # (Bq, D) float32 * (D, Bk) float32 * scale float32 = (Bq, Bk) float32
-        # Sij = tl.dot(Qi.to(tl.float32), tl.trans(Kj).to(tl.float32)) * scale
-        # # if is_causal:
-        # #     k_idx_full = j * K_TILE_SIZE + k_offs
-        # #     causal = (q_idx[:, None] >= k_idx_full[None, :]) & \
-        # #             (q_idx[:, None] < N_QUERIES) & \
-        # #             (k_idx_full[None, :] < N_KEYS)
-        # #     Sij = tl.where(causal, Sij, float('-inf'))
+        # (Bq, D) float32 * (D, Bk) float32 * scale float32 = (Bq, Bk) float32
+        Sij = tl.dot(Qi.to(tl.float32), tl.trans(Kj).to(tl.float32)) * scale
+        # if is_causal:
+        #     k_idx_full = j * K_TILE_SIZE + k_offs
+        #     causal = (q_idx[:, None] >= k_idx_full[None, :]) & \
+        #             (q_idx[:, None] < N_QUERIES) & \
+        #             (k_idx_full[None, :] < N_KEYS)
+        #     Sij = tl.where(causal, Sij, float('-inf'))
 
-        # # (Bq, Bk) float32
-        # Pij = tl.exp(Sij - tl.broadcast_to(Li[:, None], Sij.shape))
+        # (Bq, Bk) float32
+        Pij = tl.exp(Sij - tl.broadcast_to(Li[:, None], Sij.shape))
 
-        # # (Bk, Bq) float32 * (Bq, D) float32 = (Bk, D) float32
-        # # dVi = tl.dot(tl.trans(Pij), dOi)
-        # # tl.store(dV_block_ptr, dVi, boundary_check=(0, 1))
+        # (Bk, Bq) float32 * (Bq, D) float32 = (Bk, D) float32
+        # dVi = tl.dot(tl.trans(Pij), dOi)
+        # tl.store(dV_block_ptr, dVi, boundary_check=(0, 1))
 
         # # (Bq, D) float32 * (D, Bk) float32 = (Bq, Bk) float32
         # dPij = tl.dot(dOi, tl.trans(Vj))
