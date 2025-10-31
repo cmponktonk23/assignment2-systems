@@ -237,12 +237,21 @@ def flash_bwd_kernel(
     k_offs = tl.arange(0, K_TILE_SIZE)
     d_offs = tl.arange(0, D)
 
+    if is_causal:
+        q_idx = query_tile_index * Q_TILE_SIZE + tl.arange(0, Q_TILE_SIZE)
+
     for j in range(tl.cdiv(N_KEYS, K_TILE_SIZE)):
         Kj = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
         Vj = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
 
         # (Bq, D) float32 * (D, Bk) float32 * scale float32 = (Bq, Bk) float32
         Sij = tl.dot(Qi.to(tl.float32), tl.trans(Kj).to(tl.float32)) * scale
+        if is_causal:
+            k_idx_full = j * K_TILE_SIZE + k_offs
+            causal = (q_idx[:, None] >= k_idx_full[None, :]) & \
+                    (q_idx[:, None] < N_QUERIES) & \
+                    (k_idx_full[None, :] < N_KEYS)
+            Sij = tl.where(causal, Sij, float('-inf'))
 
         # (Bq, Bk) float32
         Pij = tl.exp(Sij - tl.broadcast_to(Li[:, None], Sij.shape))
@@ -253,7 +262,7 @@ def flash_bwd_kernel(
         dv_ptrs = dV_ptr + batch_index * stride_dvb + \
                 k_idx[:, None] * stride_dvq + d_offs[None, :] * stride_dvd
         mask2d = (k_idx[:, None] < N_KEYS) & (d_offs[None, :] < D)
-        tl.atomic_add(dv_ptrs, dVi, mask2d)
+        tl.atomic_add(dv_ptrs, dVi, mask=mask2d)
 
         # (Bq, D) float32 * (D, Bk) float32 = (Bq, Bk) float32
         dPij = tl.dot(dOi, tl.trans(Vj))
@@ -269,7 +278,7 @@ def flash_bwd_kernel(
         dKi = tl.dot(tl.trans(dSij), Qi.to(tl.float32)) * scale
         dk_ptrs = dK_ptr + batch_index * stride_dkb + \
                 k_idx[:, None] * stride_dkq + d_offs[None, :] * stride_dkd
-        tl.atomic_add(dk_ptrs, dKi, mask2d)
+        tl.atomic_add(dk_ptrs, dKi, mask=mask2d)
 
         K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))
         V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))
