@@ -258,7 +258,7 @@ def flash_bwd_kernel(
 
         # (Bk, Bq) float32 * (Bq, D) float32 = (Bk, D) float32
         dVi = tl.dot(tl.trans(Pij), dOi)
-        tl.store(dV_block_ptr, dVi, boundary_check=(0, 1))
+        # tl.store(dV_block_ptr, dVi, boundary_check=(0, 1))
 
         # (Bq, D) float32 * (D, Bk) float32 = (Bq, Bk) float32
         dPij = tl.dot(dOi, tl.trans(Vj))
@@ -272,12 +272,33 @@ def flash_bwd_kernel(
         dQi = tl.dot(dSij, Kj.to(tl.float32), acc=dQi) * scale
         # (Bk, Bq) float32 * (Bq, D) float32 * scale float32 = (Bk, D) float32
         dKi = tl.dot(tl.trans(dSij), Qi.to(tl.float32)) * scale
-        tl.store(dK_block_ptr, dKi, boundary_check=(0, 1))
+        # tl.store(dK_block_ptr, dKi, boundary_check=(0, 1))
 
         K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))
         V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))
-        dK_block_ptr = dK_block_ptr.advance((K_TILE_SIZE, 0))
-        dV_block_ptr = dV_block_ptr.advance((K_TILE_SIZE, 0))
+        # dK_block_ptr = dK_block_ptr.advance((K_TILE_SIZE, 0))
+        # dV_block_ptr = dV_block_ptr.advance((K_TILE_SIZE, 0))
+
+        cols = tl.arange(0, D)
+        k_idx = j * K_TILE_SIZE + tl.arange(0, K_TILE_SIZE)
+
+        for kk in tl.static_range(K_TILE_SIZE):
+            valid = (k_idx[kk] < N_KEYS)
+            dv_row_ptr = (
+                dV_ptr
+                + batch_index * stride_dvb
+                + k_idx[kk] * stride_dvq
+                + cols * stride_dvd
+            )
+            dk_row_ptr = (
+                dK_ptr
+                + batch_index * stride_dkb
+                + k_idx[kk] * stride_dkq
+                + cols * stride_dkd
+            )
+            row_mask = valid & (cols < D)
+            tl.atomic_add(dv_row_ptr, dVi[kk, :], mask=row_mask)
+            tl.atomic_add(dk_row_ptr, dKi[kk, :], mask=row_mask)
 
     tl.store(dQ_block_ptr, dQi.to(dQ_block_ptr.type.element_ty), boundary_check=(0, 1))
 
