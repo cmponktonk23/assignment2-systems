@@ -209,23 +209,23 @@ def flash_bwd_kernel(
         order=(1, 0),
     )
 
-    # dK_block_ptr = tl.make_block_ptr(
-    #     dK_ptr + batch_index * stride_dkb,
-    #     shape=(N_KEYS, D),
-    #     strides=(stride_dkq, stride_dkd),
-    #     offsets=(0, 0),
-    #     block_shape=(K_TILE_SIZE, D),
-    #     order=(1, 0),
-    # )
+    dK_block_ptr = tl.make_block_ptr(
+        dK_ptr + batch_index * stride_dkb,
+        shape=(N_KEYS, D),
+        strides=(stride_dkq, stride_dkd),
+        offsets=(0, 0),
+        block_shape=(K_TILE_SIZE, D),
+        order=(1, 0),
+    )
 
-    # dV_block_ptr = tl.make_block_ptr(
-    #     dV_ptr + batch_index * stride_dvb,
-    #     shape=(N_KEYS, D),
-    #     strides=(stride_dvq, stride_dvd),
-    #     offsets=(0, 0),
-    #     block_shape=(K_TILE_SIZE, D),
-    #     order=(1, 0),
-    # )
+    dV_block_ptr = tl.make_block_ptr(
+        dV_ptr + batch_index * stride_dvb,
+        shape=(N_KEYS, D),
+        strides=(stride_dvq, stride_dvd),
+        offsets=(0, 0),
+        block_shape=(K_TILE_SIZE, D),
+        order=(1, 0),
+    )
 
     Qi = tl.load(Q_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
     Oi = tl.load(O_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float32)
