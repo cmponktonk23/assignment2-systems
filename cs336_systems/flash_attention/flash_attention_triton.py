@@ -23,6 +23,7 @@ def flash_fwd_kernel(
     D: tl.constexpr,
     Q_TILE_SIZE: tl.constexpr,
     K_TILE_SIZE: tl.constexpr,
+    is_causal: tl.constexpr,
 ):
     query_tile_index = tl.program_id(0)
     batch_index = tl.program_id(1)
@@ -79,6 +80,9 @@ def flash_fwd_kernel(
     lij = tl.zeros((Q_TILE_SIZE,), dtype=tl.float32)
     mij = tl.full((Q_TILE_SIZE,), float('-inf'), dtype=tl.float32)
 
+    if is_causal:
+        q_idx = query_tile_index * Q_TILE_SIZE + tl.arange(0, Q_TILE_SIZE)
+
     for j in range(tl.cdiv(N_KEYS, K_TILE_SIZE)):
         # Load Kj Vj from global memory
         Kj = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero").to(tl.float16)
@@ -86,6 +90,10 @@ def flash_fwd_kernel(
 
         # Compute tile of pre-softmax attention scores
         Sij = tl.dot(Qi, tl.trans(Kj)) * scale
+        if is_causal:
+            k_idx = j * K_TILE_SIZE + tl.arange(0, K_TILE_SIZE)
+            mask = q_idx[:, None] >= k_idx[None, :]
+            Sij = tl.where(mask, Sij, Sij - 1e6)
 
         # Compute mij = max(mi, rowmax(Sij))
         mij_old = mij
@@ -138,8 +146,10 @@ class FlashAttention(torch.autograd.Function):
                           d,
                           B_q,
                           B_k,
-                          )
+                          is_causal,
+                        )
         
+        ctx.is_causal = is_causal
         ctx.save_for_backward(L)
         return O
 
