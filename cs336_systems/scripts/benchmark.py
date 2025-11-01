@@ -7,9 +7,40 @@ import torch.cuda.nvtx as nvtx
 from cs336_basics.transformer.transformer_lm import TransformerLM
 from cs336_basics.train.cross_entropy_loss import cross_entropy_loss
 
+from cs336_systems.flash_attention.flash_attention_pytorch import FlashAttention as FlashAttentionPT
+from cs336_systems.flash_attention.flash_attention_triton import FlashAttention as FlashAttentionTri
+from cs336_basics.transformer import scaled_dot_product_attention as sdp_module
+from cs336_basics.transformer.scaled_dot_product_attention import scaled_dot_product_attention as baseline_sdp
+
+
+def flash_attention_wrapper(flash_attn_apply):
+    def wrapped(Q, K, V, mask=None):
+        # Q/K/V: (batch, n_head, seq_len, head_dim)
+        B, H, L, D = Q.shape
+        Q_flat = Q.reshape(B * H, L, D)
+        K_flat = K.reshape(B * H, L, D)
+        V_flat = V.reshape(B * H, L, D)
+
+        is_causal = mask is not None
+
+        out = flash_attn_apply(Q_flat, K_flat, V_flat, is_causal)
+        return out.reshape(B, H, L, D)
+    return wrapped
+
+
+def swap_attention(impl):
+    if impl == "pytorch":
+        sdp_module.scaled_dot_product_attention = flash_attention_wrapper(FlashAttentionPT.apply)
+    elif impl == "triton":
+        sdp_module.scaled_dot_product_attention = flash_attention_wrapper(FlashAttentionTri.apply)
+    else:
+        sdp_module.scaled_dot_product_attention = baseline_sdp
+
+
 def benchmark(
         warmup_steps: int,
         measure_steps: int,
+        attn_impl: str,
         forward_only: bool,
         batch_size: int,
         context_length: int,
@@ -26,6 +57,7 @@ def benchmark(
         print(f"GPU: {torch.cuda.get_device_name(0)}")
         print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
 
+    swap_attention(attn_impl)
     model = TransformerLM(vocab_size, context_length, d_model, num_layers, num_heads, d_ff, rope_theta).to(device)
 
     # model parameter number
@@ -84,6 +116,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--warmup_steps", type=int, default=5)
     parser.add_argument("--measure_steps", type=int, default=10)
+    parser.add_argument("--attn_impl", choices=["baseline", "pytorch", "triton"], default="baseline")
     parser.add_argument("--forward_only", action="store_true", default=False)
     parser.add_argument("--forward_and_backward", dest="forward_only", action="store_false")
     parser.add_argument("--batch_size", type=int, default=32)
