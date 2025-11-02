@@ -72,13 +72,13 @@ def profile_attention(attn_fn, q, k, v, grad_out,
 
 def main():
     results = []
-    compiled_baseline_attn = torch.compile(baseline_attn)
+    # compiled_baseline_attn = torch.compile(baseline_attn)
 
     try:
         for seq_len, d_model, dtype in it.product(SEQ_LENs, D_MODELS, DTYPES):
             q, k, v, grad = make_inputs(seq_len, d_model, dtype)
             fwd_ms, bwd_ms, peak_bytes = profile_attention(
-                compiled_baseline_attn, q, k, v, grad,
+                baseline_attn, q, k, v, grad,
                 warmup=10, measure=100, causal=True,
             )
             results.append({
