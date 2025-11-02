@@ -72,13 +72,13 @@ def profile_attention(attn_fn, q, k, v, grad_out,
 
 def main():
     results = []
-    # compiled_baseline_attn = torch.compile(baseline_attn)
+    compiled_baseline_attn = torch.compile(baseline_attn)
 
     try:
         for seq_len, d_model, dtype in it.product(SEQ_LENs, D_MODELS, DTYPES):
             q, k, v, grad = make_inputs(seq_len, d_model, dtype)
             fwd_ms, bwd_ms, peak_bytes = profile_attention(
-                baseline_attn, q, k, v, grad,
+                compiled_baseline_attn, q, k, v, grad,
                 warmup=10, measure=100, causal=True,
             )
             results.append({
@@ -91,7 +91,7 @@ def main():
                 "peak_before_bwd_mb": peak_bytes / (1024 ** 2),
             })
 
-            print(f"seq_len={seq_len}, d_model={d_model}, dtype={dtype} done. fwd_ms={fwd_ms}, bwd_ms={bwd_ms}, mem={peak_bytes / (1024 ** 2)}")
+            print(f"seq_len={seq_len}, d_model={d_model}, dtype={dtype} done. fwd_ms={fwd_ms:.3f}, bwd_ms={bwd_ms:.3f}, mem_mb={peak_bytes / (1024 ** 2)}")
     finally:
         headers = [
             "impl", "dtype", "seq_len", "d_model",
