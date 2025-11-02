@@ -10,7 +10,6 @@ from cs336_basics.train.cross_entropy_loss import cross_entropy_loss
 
 from cs336_systems.flash_attention.flash_attention_pytorch import FlashAttention as FlashAttentionPT
 from cs336_systems.flash_attention.flash_attention_triton import FlashAttention as FlashAttentionTri
-from cs336_basics.transformer import scaled_dot_product_attention as sdp_module
 from cs336_basics.transformer.scaled_dot_product_attention import scaled_dot_product_attention as baseline_sdp
 
 
@@ -38,13 +37,21 @@ def flash_attention_wrapper(flash_attn_apply):
     return wrapped
 
 
+from cs336_basics.transformer import scaled_dot_product_attention as sdp_mod
+from cs336_basics.transformer import transformer_lm as tlm_mod
+from cs336_basics.transformer import multi_head_self_attention as mhsa_mod
+
 def swap_attention(impl):
     if impl == "pytorch":
-        sdp_module.scaled_dot_product_attention = flash_attention_wrapper(FlashAttentionPT.apply)
+        attn = flash_attention_wrapper(FlashAttentionPT.apply)
     elif impl == "triton":
-        sdp_module.scaled_dot_product_attention = flash_attention_wrapper(FlashAttentionTri.apply)
+        attn = flash_attention_wrapper(FlashAttentionTri.apply)
     else:
-        sdp_module.scaled_dot_product_attention = baseline_sdp
+        attn = baseline_sdp
+
+    sdp_mod.scaled_dot_product_attention = attn
+    tlm_mod.scaled_dot_product_attention = attn
+    mhsa_mod.scaled_dot_product_attention = attn
 
 
 def benchmark(
