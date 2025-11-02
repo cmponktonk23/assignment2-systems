@@ -3,6 +3,8 @@ import torch
 import itertools as it
 from tabulate import tabulate
 from cs336_basics.transformer.scaled_dot_product_attention import scaled_dot_product_attention
+from cs336_systems.flash_attention.flash_attention_pytorch import FlashAttention as FlashAttentionPytorch
+from cs336_systems.flash_attention.flash_attention_triton import FlashAttention as FlashAttentionTriton
 
 
 SEQ_LENs = [256, 1024, 4096, 8192, 16384]
@@ -72,17 +74,20 @@ def profile_attention(attn_fn, q, k, v, grad_out,
 
 def main():
     results = []
-    compiled_baseline_attn = torch.compile(baseline_attn)
+    # compiled_baseline_attn = torch.compile(baseline_attn)
+
+    flash_attn_pytorch = lambda q, k, v, causal: FlashAttentionPytorch.apply(q, k, v, causal)
+    # flash_attn_triton = lambda q, k, v, causal: FlashAttentionTriton.apply(q, k, v, causal)
 
     try:
         for seq_len, d_model, dtype in it.product(SEQ_LENs, D_MODELS, DTYPES):
             q, k, v, grad = make_inputs(seq_len, d_model, dtype)
             fwd_ms, bwd_ms, peak_bytes = profile_attention(
-                compiled_baseline_attn, q, k, v, grad,
+                flash_attn_pytorch, q, k, v, grad,
                 warmup=10, measure=100, causal=True,
             )
             results.append({
-                "impl": "baseline",
+                "impl": "flash_attn_pytorch",
                 "dtype": dtype.__repr__().split(".")[-1],
                 "seq_len": seq_len,
                 "d_model": d_model,
