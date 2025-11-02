@@ -72,33 +72,36 @@ def profile_attention(attn_fn, q, k, v, grad_out,
 
 def main():
     results = []
-    for seq_len, d_model, dtype in it.product(SEQ_LENs, D_MODELS, DTYPES):
-        q, k, v, grad = make_inputs(seq_len, d_model, dtype)
-        fwd_ms, bwd_ms, peak_bytes = profile_attention(
-            baseline_attn, q, k, v, grad,
-            warmup=10, measure=100, causal=True,
-        )
-        results.append({
-            "impl": "baseline",
-            "dtype": dtype.__repr__().split(".")[-1],
-            "seq_len": seq_len,
-            "d_model": d_model,
-            "forward_ms": fwd_ms,
-            "backward_ms": bwd_ms,
-            "peak_before_bwd_mb": peak_bytes / (1024 ** 2),
-        })
+    # compiled_baseline_attn = torch.compile(baseline_attn)
 
-        print(f"seq_len={seq_len}, d_model={d_model}, dtype={dtype} done")
-    
-    headers = [
-        "impl", "dtype", "seq_len", "d_model",
-        "forward_ms", "backward_ms", "peak_before_bwd_mb",
-    ]
-    rows = [
-        [r[h] for h in headers]
-        for r in results
-    ]
-    print(tabulate(rows, headers=headers, floatfmt=".3f"))
+    try:
+        for seq_len, d_model, dtype in it.product(SEQ_LENs, D_MODELS, DTYPES):
+            q, k, v, grad = make_inputs(seq_len, d_model, dtype)
+            fwd_ms, bwd_ms, peak_bytes = profile_attention(
+                baseline_attn, q, k, v, grad,
+                warmup=10, measure=100, causal=True,
+            )
+            results.append({
+                "impl": "baseline",
+                "dtype": dtype.__repr__().split(".")[-1],
+                "seq_len": seq_len,
+                "d_model": d_model,
+                "forward_ms": fwd_ms,
+                "backward_ms": bwd_ms,
+                "peak_before_bwd_mb": peak_bytes / (1024 ** 2),
+            })
+
+            print(f"seq_len={seq_len}, d_model={d_model}, dtype={dtype} done. fwd_ms={fwd_ms}, bwd_ms={bwd_ms}, mem={peak_bytes / (1024 ** 2)}")
+    finally:
+        headers = [
+            "impl", "dtype", "seq_len", "d_model",
+            "forward_ms", "backward_ms", "peak_before_bwd_mb",
+        ]
+        rows = [
+            [r[h] for h in headers]
+            for r in results
+        ]
+        print(tabulate(rows, headers=headers, floatfmt=".3f"))
 
 if __name__ == "__main__":
     main()
