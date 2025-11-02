@@ -5,9 +5,9 @@ from tabulate import tabulate
 from cs336_basics.transformer.scaled_dot_product_attention import scaled_dot_product_attention
 
 
-SEQ_LENs = [256,]
-D_MODELS = [16,]
-DTYPES = [torch.float32]
+SEQ_LENs = [256, 1024, 4096, 8192, 16384]
+D_MODELS = [16, 32, 64, 128]
+DTYPES = [torch.bfloat16, torch.float32]
 
 
 def make_inputs(seq_len, d_model, dtype):
