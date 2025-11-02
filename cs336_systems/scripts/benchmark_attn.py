@@ -7,8 +7,8 @@ from cs336_systems.flash_attention.flash_attention_pytorch import FlashAttention
 from cs336_systems.flash_attention.flash_attention_triton import FlashAttention as FlashAttentionTriton
 
 
-SEQ_LENs = [256,]
-D_MODELS = [16,]
+SEQ_LENs = [256, 1024, 4096, 8192, 16384]
+D_MODELS = [16, 32, 64, 128]
 DTYPES = [torch.bfloat16, torch.float32]
 
 
@@ -87,7 +87,7 @@ def main():
                 warmup=10, measure=100, causal=True,
             )
             results.append({
-                "impl": "flash_attn_triton",
+                "impl": "flash_attn_pytorch",
                 "dtype": dtype.__repr__().split(".")[-1],
                 "seq_len": seq_len,
                 "d_model": d_model,
