@@ -79,17 +79,17 @@ def main():
     results = []
     # compiled_baseline_attn = torch.compile(baseline_attn)
     # flash_attn_pytorch = lambda q, k, v, causal: FlashAttentionPytorch.apply(q, k, v, causal)
-    # flash_attn_triton = lambda q, k, v, causal: FlashAttentionTriton.apply(q, k, v, causal)
+    flash_attn_triton = lambda q, k, v, causal: FlashAttentionTriton.apply(q, k, v, causal)
 
     try:
         for seq_len, d_model, dtype in it.product(SEQ_LENs, D_MODELS, DTYPES):
             q, k, v, grad = make_inputs(seq_len, d_model, dtype)
             fwd_ms, bwd_ms, fwd_peak_bytes, bwd_peak_bytes = profile_attention(
-                baseline_attn, q, k, v, grad,
+                flash_attn_triton, q, k, v, grad,
                 warmup=10, measure=100, causal=True,
             )
             results.append({
-                "impl": "flash_attn_baseline",
+                "impl": "flash_attn_triton",
                 "dtype": dtype.__repr__().split(".")[-1],
                 "seq_len": seq_len,
                 "d_model": d_model,
