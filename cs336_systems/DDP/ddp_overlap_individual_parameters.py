@@ -26,7 +26,7 @@ class DDPModuleWrapper(torch.nn.Module):
 
 
     def forward(self, *inputs, **kwargs):
-        return self.module.forward(*inputs, **kwargs)
+        return self.module(*inputs, **kwargs)
 
 
     def finish_gradient_synchronization(self):
