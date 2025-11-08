@@ -24,6 +24,7 @@ def flash_fwd_kernel(
     Q_TILE_SIZE: tl.constexpr,
     K_TILE_SIZE: tl.constexpr,
     is_causal: tl.constexpr,
+    H100: tl.constexpr = 0,
 ):
     query_tile_index = tl.program_id(0)
     batch_index = tl.program_id(1)
@@ -94,7 +95,11 @@ def flash_fwd_kernel(
         Vj = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero")
 
         # (Bq, D) fp16 * (D, Bk) fp16 * scale fp32 = (Bq, Bk) fp32
-        Sij = tl.dot(Qi, tl.trans(Kj)) * scale
+        if H100:
+            Sij = tl.dot(Qi, tl.trans(Kj)) * scale
+        else:
+            Sij = tl.dot(Qi.to(tl.float16), tl.trans(Kj).to(tl.float16)) * scale
+
         if is_causal:
             k_idx = j * K_TILE_SIZE + k_range
             mask = (q_idx[:, None] >= k_idx[None, :]) & (q_idx[:, None] < N_QUERIES) & (k_idx[None, :] < N_KEYS)
@@ -112,7 +117,10 @@ def flash_fwd_kernel(
         lij = rescale * lij + tl.sum(Pij, axis=1)
 
         # (Bq, Bk) fp16 * (Bk, D) fp16 = (Bq, D) fp32
-        Oij = tl.dot(Pij.to(Vj.dtype), Vj, acc=tl.broadcast_to(rescale[:, None], Oij.shape) * Oij)
+        if H100:
+            Oij = tl.dot(Pij.to(Vj.dtype), Vj, acc=tl.broadcast_to(rescale[:, None], Oij.shape) * Oij)
+        else:
+            Oij = tl.dot(Pij.to(tl.float16), Vj.to(tl.float16), acc=tl.broadcast_to(rescale[:, None], Oij.shape) * Oij)
 
         K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))
         V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))
@@ -145,6 +153,7 @@ def flash_bwd_kernel(
     Q_TILE_SIZE: tl.constexpr,
     K_TILE_SIZE: tl.constexpr,
     is_causal: tl.constexpr,
+    H100: tl.constexpr = 0,
 ):
     query_tile_index = tl.program_id(0)
     batch_index = tl.program_id(1)
@@ -236,7 +245,11 @@ def flash_bwd_kernel(
         Vj = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero")
 
         # (Bq, D) fp16 * (D, Bk) fp16 * scale fp32 = (Bq, Bk) fp32
-        Sij = tl.dot(Qi, tl.trans(Kj)) * scale
+        if H100:
+            Sij = tl.dot(Qi, tl.trans(Kj)) * scale
+        else:
+            Sij = tl.dot(Qi.to(tl.float16), tl.trans(Kj).to(tl.float16)) * scale
+
         if is_causal:
             k_idx = j * K_TILE_SIZE + k_range
             mask = (q_idx[:, None] >= k_idx[None, :]) & (q_idx[:, None] < N_QUERIES) & (k_idx[None, :] < N_KEYS)
@@ -246,13 +259,20 @@ def flash_bwd_kernel(
         Pij = tl.exp(Sij - tl.broadcast_to(Li[:, None], Sij.shape))
 
         # (Bk, Bq) fp16 * (Bq, D) fp16 = (Bk, D) fp32
-        dVi = tl.dot(tl.trans(Pij).to(dOi.dtype), dOi, out_dtype=tl.float32)
+        if H100:
+            dVi = tl.dot(tl.trans(Pij).to(dOi.dtype), dOi, out_dtype=tl.float32)
+        else:
+            dVi = tl.dot(tl.trans(Pij).to(tl.float16), dOi.to(tl.float16), out_dtype=tl.float32)
+
         k_offsets = j * K_TILE_SIZE + k_range
         dV_ptrs = dV_ptr + batch_index * stride_dvb + k_offsets[:, None] * stride_dvq + d_offsets[None, :] * stride_dvd
         tl.atomic_add(dV_ptrs, dVi)
 
         # (Bq, D) fp16 * (D, Bk) fp16 = (Bq, Bk) fp32
-        dPij = tl.dot(dOi, tl.trans(Vj))
+        if H100:
+            dPij = tl.dot(dOi, tl.trans(Vj))
+        else:
+            dPij = tl.dot(dOi.to(tl.float16), tl.trans(Vj).to(tl.float16))
 
         # (Bq,) fp16
         Di = tl.sum(Oi * dOi, axis=1)
@@ -260,9 +280,17 @@ def flash_bwd_kernel(
         dSij = Pij * (dPij - tl.broadcast_to(Di[:, None], dPij.shape))
 
         # (Bq, Bk) fp16 * (Bk, D) fp16 * scale fp32 = (Bq, D) fp32
-        dQi += tl.dot(dSij.to(Kj.dtype), Kj) * scale
+        if H100:
+            dQi += tl.dot(dSij.to(Kj.dtype), Kj) * scale
+        else:
+            dQi += tl.dot(dSij.to(tl.float16), Kj.to(tl.float16)) * scale
+
         # (Bk, Bq) fp16 * (Bq, D) fp16 * scale fp32 = (Bk, D) fp32
-        dKi = tl.dot(tl.trans(dSij).to(Qi.dtype), Qi, out_dtype=tl.float32) * scale
+        if H100:
+            dKi = tl.dot(tl.trans(dSij).to(Qi.dtype), Qi, out_dtype=tl.float32) * scale
+        else:
+            dKi = tl.dot(tl.trans(dSij).to(tl.float16), Qi.to(tl.float16), out_dtype=tl.float32) * scale
+
         dK_ptrs = dK_ptr + batch_index * stride_dkb + k_offsets[:, None] * stride_dkq + d_offsets[None, :] * stride_dkd
         tl.atomic_add(dK_ptrs, dKi)
 
