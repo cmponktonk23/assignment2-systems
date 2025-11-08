@@ -54,7 +54,7 @@ def get_ddp_individual_parameters(module: torch.nn.Module) -> torch.nn.Module:
         Instance of a DDP class.
     """
     # For example: return DDPIndividualParameters(module)
-    from cs336_systems.DDP.ddp_module_wrapper import DDPModuleWrapper
+    from cs336_systems.DDP.ddp_overlap_individual_parameters_wrapper import DDPModuleWrapper
     return DDPModuleWrapper(module)
 
 
